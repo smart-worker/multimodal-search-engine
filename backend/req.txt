@@ -1,0 +1,10 @@
+flask
+flask-cors
+torch
+transformers
+librosa
+faiss-cpu
+pillow
+numpy
+scipy
+wav2clip
