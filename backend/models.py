@@ -1,17 +1,16 @@
 import torch
 from transformers import CLIPProcessor, CLIPModel
-import wav2clip
 
 # Global model variables
 CLIP_MODEL = None
 CLIP_PROCESSOR = None
-WAV2CLIP_MODEL = None
+CLAP_MODEL = None
 
 def load_models():
-    """Loads the CLIP and Wav2CLIP models"""
-    global CLIP_MODEL, CLIP_PROCESSOR, WAV2CLIP_MODEL
+    """Loads the CLIP and CLAP models"""
+    global CLIP_MODEL, CLIP_PROCESSOR, CLAP_MODEL
     
-    print("Loading CLIP and Wav2CLIP models...")
+    print("Loading CLIP and CLAP models...")
 
     # Load CLIP models
     try:
@@ -20,38 +19,51 @@ def load_models():
         CLIP_PROCESSOR = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
         print("✅ CLIP models loaded successfully.")
         
-        # Verify they're actually loaded
-        print(f"CLIP_MODEL type: {type(CLIP_MODEL)}")
-        print(f"CLIP_PROCESSOR type: {type(CLIP_PROCESSOR)}")
-        
     except Exception as e:
         print(f"❌ Error loading CLIP models: {e}")
         CLIP_MODEL = None
         CLIP_PROCESSOR = None
 
-    # Test Wav2CLIP availability (loaded on-demand in embeddings.py)
+    # Load CLAP model
     try:
-        print("Testing Wav2CLIP model availability...")
-        test_model = wav2clip.get_model()
-        WAV2CLIP_MODEL = "available"  # Just a flag
-        print("✅ Wav2CLIP model available.")
+        print("Loading CLAP model...")
         
+        # Try msclap first (Microsoft CLAP implementation)
+        try:
+            from msclap import CLAP
+            CLAP_MODEL = CLAP(version='2023', use_cuda=torch.cuda.is_available())
+            print("✅ CLAP model (msclap) loaded successfully.")
+            
+        except ImportError:
+            print("msclap not available, trying laion-clap...")
+            
+            # Fallback to laion-clap
+            try:
+                import laion_clap
+                CLAP_MODEL = laion_clap.CLAP_Module(enable_fusion=False)
+                CLAP_MODEL.load_ckpt()  # Load pre-trained weights
+                print("✅ CLAP model (laion-clap) loaded successfully.")
+                
+            except ImportError:
+                print("❌ Neither msclap nor laion-clap is available.")
+                print("Please install: pip install msclap")
+                CLAP_MODEL = None
+                
     except Exception as e:
-        print(f"❌ Error loading Wav2CLIP model: {e}")
-        WAV2CLIP_MODEL = None
+        print(f"❌ Error loading CLAP model: {e}")
+        CLAP_MODEL = None
 
     print("Model loading process completed.")
-    
-    # Print final status for debugging
     print(f"Final status - CLIP_MODEL loaded: {CLIP_MODEL is not None}")
     print(f"Final status - CLIP_PROCESSOR loaded: {CLIP_PROCESSOR is not None}")
-    print(f"Final status - WAV2CLIP_MODEL available: {WAV2CLIP_MODEL is not None}")
+    print(f"Final status - CLAP_MODEL loaded: {CLAP_MODEL is not None}")
 
 def get_model_status():
     """Returns the current status of loaded models"""
     return {
         "clip_loaded": CLIP_MODEL is not None and CLIP_PROCESSOR is not None,
-        "wav2clip_loaded": WAV2CLIP_MODEL is not None
+        "clap_loaded": CLAP_MODEL is not None,
+        "clap_type": type(CLAP_MODEL).__name__ if CLAP_MODEL else None
     }
 
 # Load models when module is imported

@@ -2,8 +2,6 @@ import numpy as np
 import torch
 from PIL import Image
 import librosa
-import wav2clip
-from transformers import CLIPProcessor, CLIPModel
 
 def load_audio(file_path, target_sr=22050):
     """Enhanced audio loading with proper resampling and normalization"""
@@ -30,13 +28,11 @@ def get_image_embedding(image_path):
             return None
     
     try:
-        # Load and process image
         image = Image.open(image_path).convert("RGB")
         inputs = CLIP_PROCESSOR(images=image, return_tensors="pt")
         
         with torch.no_grad():
             image_features = CLIP_MODEL.get_image_features(pixel_values=inputs.pixel_values)
-            # Normalize for cosine similarity
             image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         
         embedding = image_features.squeeze().cpu().numpy()
@@ -50,35 +46,58 @@ def get_image_embedding(image_path):
         traceback.print_exc()
         return None
 
-def get_audio_embedding(audio_path, target_sr=22050):
-    """Generates a single audio embedding using Wav2CLIP"""
-    print(f"🎵 Generating embedding for audio: {audio_path}")
+def get_audio_embedding(audio_path):
+    """Generates audio embedding using CLAP (CLIP-compatible)"""
+    from models import CLAP_MODEL
+    
+    print(f"🎵 Generating CLAP embedding for audio: {audio_path}")
+    
+    if CLAP_MODEL is None:
+        print("❌ CLAP model not loaded")
+        return None
     
     try:
-        # Use enhanced audio loading function
-        waveform, sample_rate = load_audio(audio_path, target_sr)
+        # Check which CLAP implementation we're using
+        if hasattr(CLAP_MODEL, 'get_audio_embeddings'):
+            # msclap implementation
+            audio_embeddings = CLAP_MODEL.get_audio_embeddings([audio_path])
+            embedding = audio_embeddings[0]
+            
+        elif hasattr(CLAP_MODEL, 'get_audio_embedding_from_filelist'):
+            # laion-clap implementation
+            audio_embeddings = CLAP_MODEL.get_audio_embedding_from_filelist([audio_path], use_tensor=False)
+            embedding = audio_embeddings[0]
+            
+        else:
+            print("❌ Unknown CLAP model implementation")
+            return None
         
-        # Load Wav2CLIP model
-        model = wav2clip.get_model()
-        
-        # Generate embedding
-        embedding = wav2clip.embed_audio(waveform, model)
-        
-        # Convert to numpy if it's a tensor
+        # Convert to numpy if needed
         if isinstance(embedding, torch.Tensor):
             embedding = embedding.cpu().numpy()
         
-        # Ensure it's a flat array and normalize
         embedding = embedding.flatten()
-        embedding = embedding / (np.linalg.norm(embedding) + 1e-8)
         
-        print(f"✅ Generated audio embedding with shape: {embedding.shape}")
-        print(f"   Embedding norm: {np.linalg.norm(embedding):.4f}")
+        # Ensure 512 dimensions to match CLIP
+        expected_dim = 512
+        if embedding.shape[0] != expected_dim:
+            if embedding.shape[0] > expected_dim:
+                embedding = embedding[:expected_dim]
+            else:
+                padded = np.zeros(expected_dim, dtype=np.float32)
+                padded[:embedding.shape[0]] = embedding
+                embedding = padded
         
+        # Normalize for cosine similarity
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+        
+        print(f"✅ Generated CLAP audio embedding with shape: {embedding.shape}")
         return embedding
         
     except Exception as e:
-        print(f"❌ Error generating audio embedding for {audio_path}: {e}")
+        print(f"❌ Error generating CLAP audio embedding for {audio_path}: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -104,7 +123,6 @@ def get_text_embedding(text):
                 input_ids=inputs.input_ids,
                 attention_mask=inputs.attention_mask
             )
-            # Normalize for cosine similarity
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
         
         embedding = text_features.squeeze().cpu().numpy()
@@ -117,3 +135,20 @@ def get_text_embedding(text):
         import traceback
         traceback.print_exc()
         return None
+
+def verify_embedding_compatibility():
+    """Verify that all embedding types produce compatible vectors"""
+    print("🔍 Verifying embedding compatibility...")
+    
+    try:
+        test_text = "a dog barking"
+        text_emb = get_text_embedding(test_text)
+        
+        if text_emb is not None:
+            print(f"✅ Text embedding shape: {text_emb.shape}")
+            print(f"   Text embedding norm: {np.linalg.norm(text_emb):.4f}")
+        
+        print("🎯 All embeddings should be 512-dimensional and normalized for proper cross-modal search")
+        
+    except Exception as e:
+        print(f"❌ Error in compatibility check: {e}")

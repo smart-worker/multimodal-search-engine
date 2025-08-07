@@ -71,9 +71,9 @@ def load_index():
         print(f"❌ Error loading index: {e}")
         return False
 
-def add_embedding(file_path: str, embedding, file_type: str = "unknown"):
+def add_embedding(file_path: str, embedding, file_type: str = "unknown", extra_metadata: dict = None):
     """
-    Adds a file path and its embedding to the database.
+    Enhanced version with richer metadata support
     """
     initialize_faiss_index()
     
@@ -103,26 +103,37 @@ def add_embedding(file_path: str, embedding, file_type: str = "unknown"):
         # Add to FAISS index
         faiss_index.add(embedding)
         
-        # Store metadata
-        file_paths.append(file_path)
-        file_metadata.append({
+        # Enhanced metadata
+        metadata = {
             'file_path': file_path,
             'file_type': file_type,
             'filename': os.path.basename(file_path),
-            'added_at': datetime.now().isoformat()
-        })
+            'added_at': datetime.now().isoformat(),
+            'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        }
         
-        print(f"✅ Added embedding for {os.path.basename(file_path)} to FAISS index (Total: {faiss_index.ntotal})")
+        # Add extra metadata if provided
+        if extra_metadata:
+            metadata.update(extra_metadata)
         
-        # Auto-save every 10 additions
-        if faiss_index.ntotal % 10 == 0:
+        # Store metadata
+        file_paths.append(file_path)
+        file_metadata.append(metadata)
+        
+        print(f"✅ Added {os.path.basename(file_path)} to index (Total: {faiss_index.ntotal})")
+        
+        # Save every 5 additions for real-time scenarios
+        if faiss_index.ntotal % 5 == 0:
             save_index()
         
         return True
         
     except Exception as e:
-        print(f"❌ Error adding embedding for {file_path}: {e}")
+        print(f"❌ Error adding embedding: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
 
 def search_similar(embedding, num_results: int = 5):
     """
