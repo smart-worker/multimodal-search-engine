@@ -509,6 +509,44 @@ def reset_index():
         "note": "Rebuild index with CLAP-enabled embeddings for cross-modal search"
     })
 
+@app.route('/upload_status/<task_id>')
+def upload_status(task_id):
+    """Get real-time upload and indexing status"""
+    if task_id not in upload_progress:
+        return jsonify({"error": "Task not found"}), 404
+    
+    return jsonify(upload_progress[task_id])
+
+@app.route('/recent_uploads', methods=['GET'])
+def recent_uploads():
+    """Get recently uploaded and indexed files"""
+    from database import file_metadata
+    
+    try:
+        # Get last 20 uploads, sorted by most recent
+        recent = sorted(file_metadata, key=lambda x: x.get('added_at', ''), reverse=True)[:20]
+        
+        uploads = []
+        for item in recent:
+            uploads.append({
+                "filename": item.get('original_filename', item.get('filename', 'unknown')),
+                "type": item.get('file_type', 'unknown'),
+                "added_at": item.get('added_at', 'unknown'),
+                "file_url": f"/static/{item.get('filename', '')}",
+                "model_used": item.get('model_used', 'unknown'),
+                "file_size": item.get('file_size', 0)
+            })
+        
+        return jsonify({
+            "status": "success",
+            "recent_uploads": uploads,
+            "total_count": len(file_metadata)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/delete_item/<int:item_id>', methods=['DELETE'])
 def delete_item(item_id):
     """Delete a specific item from the index (Note: FAISS doesn't support deletion, so this is a placeholder)"""
